@@ -125,7 +125,7 @@ $effect(() => {
 	fetchedId = id;
 	let cancelled = false;
 
-	videoUrlFor(id).then((u) => !cancelled && (video.url = u));
+	Promise.resolve(canvasUrl).then((u) => !cancelled && (video.url = u));
 
 	// Cancelled with nothing to show for it: let it be tried again.
 	return () => {
@@ -396,3 +396,4 @@ $effect(() => {
 	aria-hidden="true"
 	class="pointer-events-none fixed left-0 top-0 h-0 w-0 overflow-hidden opacity-0"
 ></div>
+
