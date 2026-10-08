@@ -1,10 +1,11 @@
 name: Windows test build
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - animated-art
-
+      
 permissions:
   contents: read
 
