@@ -109,14 +109,17 @@
 
 $effect(() => {
 	const id = playback.now?.videoId;
-	playback.canvasUrl;
+	const canvasUrl = playback.canvasUrl;
 
+	// video.want is a dependency so turning video on mid-track starts the fetch;
+	// fetchedId is what stops turning it off and on again from refetching what we already have.
+	// Reading canvasUrl makes this effect run again when ArchiveTune finishes asynchronously.
 	if (
 		!id ||
 		!canVideo() ||
 		!video.want ||
 		dormant ||
-		(fetchedId === id && !playback.canvasUrl)
+		(fetchedId === id && !canvasUrl)
 	) return;
 
 	fetchedId = id;
@@ -124,17 +127,12 @@ $effect(() => {
 
 	videoUrlFor(id).then((u) => !cancelled && (video.url = u));
 
+	// Cancelled with nothing to show for it: let it be tried again.
 	return () => {
 		cancelled = true;
 		if (!video.url) fetchedId = null;
 	};
 });
-		// Cancelled with nothing to show for it (toggled off mid-flight): let it be tried again.
-		return () => {
-			cancelled = true;
-			if (!video.url) fetchedId = null;
-		};
-	});
 
 	/** Where mpv is *now*, not where it was when the last tick was emitted. Ticks land at ~4 Hz
 	 *  (src-tauri/src/lib.rs), so `playback.position` alone is up to 250 ms old, and lining the
