@@ -1,0 +1,120 @@
+name: Windows test build
+
+on:
+  push:
+    branches:
+      - animated-art
+
+permissions:
+  contents: read
+
+env:
+  MPV_DEV_URL: https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260610/mpv-dev-x86_64-20260610-git-304426c.7z
+  MPV_DIR: ${{ github.workspace }}\.libmpv
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - name: Frontend dependencies
+        shell: bash
+        run: cd ui && pnpm install --frozen-lockfile
+
+      - name: Frontend build
+        shell: bash
+        run: cd ui && pnpm build
+
+      - name: Rust MSVC
+        shell: bash
+        run: rustup default stable-msvc
+
+      - name: Resolve RUSTFLAGS
+        shell: bash
+        run: |
+          FLAGS="-L native=${{ github.workspace }}\.libmpv"
+          SYSROOT="$(rustc --print sysroot | tr '\\' '/')"
+          RUST_LLD="$SYSROOT/lib/rustlib/x86_64-pc-windows-msvc/bin/rust-lld.exe"
+
+          if [ -f "$RUST_LLD" ]; then
+            FLAGS="$FLAGS -C linker-flavor=lld-link -C linker=$RUST_LLD"
+          fi
+
+          echo "RUSTFLAGS=$FLAGS" >> "$GITHUB_ENV"
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: Tauri CLI
+        shell: bash
+        run: npm install -g "@tauri-apps/cli@2.11.5"
+
+      - name: Build libmpv import library
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          New-Item -ItemType Directory -Force -Path "$env:MPV_DIR" | Out-Null
+
+          curl.exe -fsSL -o "$env:MPV_DIR\mpv-dev.7z" "$env:MPV_DEV_URL"
+          7z x "$env:MPV_DIR\mpv-dev.7z" -o"$env:MPV_DIR" -y | Out-Null
+
+          if (-not (Test-Path "$env:MPV_DIR\libmpv-2.dll")) {
+            throw "libmpv-2.dll not found"
+          }
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -property installationPath
+
+          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+
+          Set-Location "$env:MPV_DIR"
+
+          $names = & dumpbin /exports libmpv-2.dll |
+            Select-String -Pattern '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\w+)' |
+            ForEach-Object { $_.Matches[0].Groups[1].Value }
+
+          if ($names.Count -lt 50) {
+            throw "Could not parse libmpv exports"
+          }
+
+          @("EXPORTS") + ($names | ForEach-Object { "    $_" }) |
+            Set-Content -Path mpv.def -Encoding ascii
+
+          & lib /def:mpv.def /name:libmpv-2.dll /out:mpv.lib /machine:x64
+
+          Copy-Item "$env:MPV_DIR\libmpv-2.dll" "$env:GITHUB_WORKSPACE\src-tauri\libmpv-2.dll" -Force
+
+      - name: Build unsigned Windows installer
+        shell: bash
+        run: |
+          tauri build \
+            --bundles nsis \
+            --config '{"build":{"beforeBuildCommand":""},"bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: limusic-animated-art-windows
+          path: target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 7
