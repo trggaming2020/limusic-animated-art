@@ -394,6 +394,24 @@ export const getQueue = () => invoke<QueueState>('get_queue');
 /** A `limusicvideo://` URL for the track's music video, or null when there isn't one. `maxHeight`
  *  caps the picture at what the box on screen can actually show. The bytes are proxied through
  *  Rust; the webview never sees a googlevideo URL. */
+export const canvasArtwork = async (
+	song: string,
+	artist: string
+): Promise<string | null> => {
+	const url = new URL('https://artwork.boidu.dev/');
+	url.searchParams.set('s', song);
+	url.searchParams.set('a', artist);
+
+	const response = await fetch(url);
+	if (!response.ok) return null;
+
+	const data = (await response.json()) as {
+		videoUrl?: string | null;
+		videoUrlVertical?: string | null;
+	};
+
+	return data.videoUrl ?? data.videoUrlVertical ?? null;
+};
 export const videoStream = (videoId: string, maxHeight: number) =>
 	invoke<string | null>('video_stream', { videoId, maxHeight });
 
@@ -1075,3 +1093,4 @@ export const onLtState = (cb: (s: LtState) => void): Promise<UnlistenFn> =>
 	listen<LtState>('lt-state', (e) => cb(e.payload));
 export const onLtNotice = (cb: (msg: string) => void): Promise<UnlistenFn> =>
 	listen<string>('lt-notice', (e) => cb(e.payload));
+

@@ -24,9 +24,18 @@ export const video = $state({
 
 export type Hole = { x: number; y: number; w: number; h: number };
 
-export const canVideo = () => prefs.musicVideos && !!playback.now?.isVideo;
-export const hasVideo = () =>
-	canVideo() && (prefs.nativeVideo ? !!videoReady[playback.now!.videoId] : !!video.url);
+export const canVideo = () =>
+		prefs.musicVideos && (!!playback.now?.isVideo || !!playback.canvasUrl);
+	
+	export const hasVideo = () =>
+		canVideo() &&
+		(
+			playback.canvasUrl
+				? !!video.url
+				: prefs.nativeVideo
+					? !!videoReady[playback.now!.videoId]
+					: !!video.url
+		);
 export const showVideo = () => hasVideo() && video.want;
 
 // The live element and where it waits when nothing is showing it. Plain module lets: this is DOM

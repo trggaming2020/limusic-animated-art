@@ -23,6 +23,7 @@ import { parseScrobbleConfig } from './scrobble';
 
 export const playback = $state({
 	now: null as NowPlaying | null,
+	canvasUrl: null as string | null,
 	queue: { items: [], currentIndex: 0 } as QueueState,
 	paused: false,
 	position: 0,
@@ -108,17 +109,18 @@ export function wantedVideoHeight() {
 
 /** The loopback URL for a track's music video, resolving it at most once. */
 export function videoUrlFor(videoId: string): Promise<string | null> {
+	if (playback.now?.videoId === videoId && playback.canvasUrl) {
+		return Promise.resolve(playback.canvasUrl);
+	}
+
 	let p = videoUrls.get(videoId);
 	if (!p) {
-		// Silent on failure: a null answer is the ordinary case (the track has no video stream),
-		// and the artwork staying put is already the right thing to show.
 		p = api.videoStream(videoId, wantedVideoHeight()).catch(() => null);
 		if (videoUrls.size >= 8) videoUrls.delete(videoUrls.keys().next().value!);
 		videoUrls.set(videoId, p);
 	}
 	return p;
 }
-
 /** Forget a URL the element could not load, here and in Rust, so the next open resolves a fresh
  *  one instead of failing the same way. */
 export function forgetVideoUrl(videoId: string) {
@@ -1483,6 +1485,12 @@ export function initApp(mini = false): () => void {
 	const subs = [
 		api.onNowPlaying((n) => {
 			playback.now = n;
+			playback.canvasUrl = null;
+			api.canvasArtwork(n.title, n.artists)
+				.then((url) => {
+					if (playback.now?.videoId === n.videoId) playback.canvasUrl = url;
+				})
+				.catch(() => {});
 			playback.rating = n.rating ?? 'indifferent'; // the track's real rating when known
 			// Feeds Shortcuts recency and the community shelf's artist seed. Every play lands here,
 			// gapless advances included, so it's the one hook that sees them all.

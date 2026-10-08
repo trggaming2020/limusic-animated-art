@@ -107,24 +107,28 @@
 		// that path already re-runs the whole converge phase.
 	});
 
-	$effect(() => {
-		const id = playback.now?.videoId;
-		// video.want is a dependency so turning video on mid-track starts the fetch; fetchedId is
-		// what stops turning it off and on again from refetching what we already have.
-		// `dormant` means nobody can see the picture and the music is not moving, so resolving a
-		// URL here would only feed a pipeline we are deliberately not holding. It is state, so
-		// waking re-runs this and the fetch happens then.
-		if (!id || !canVideo() || !video.want || dormant || fetchedId === id) return;
-		fetchedId = id;
-		let cancelled = false;
-		// Usually already resolved (the store warms it when the track starts, and keeps it across
-		// this component being unmounted), in which case this settles without touching the network.
-		// A `#t=` media fragment was tried here, to open the stream where the music already is
-		// rather than at byte 0. WebKitGTK's GStreamer backend did not honour it, and it is not
-		// free to leave in: the element still prerolls, so a fragment it half-applies is one more
-		// unknown in a phase that has to measure precisely. The converge phase below handles the
-		// opening position instead.
-		videoUrlFor(id).then((u) => !cancelled && (video.url = u));
+$effect(() => {
+	const id = playback.now?.videoId;
+	playback.canvasUrl;
+
+	if (
+		!id ||
+		!canVideo() ||
+		!video.want ||
+		dormant ||
+		(fetchedId === id && !playback.canvasUrl)
+	) return;
+
+	fetchedId = id;
+	let cancelled = false;
+
+	videoUrlFor(id).then((u) => !cancelled && (video.url = u));
+
+	return () => {
+		cancelled = true;
+		if (!video.url) fetchedId = null;
+	};
+});
 		// Cancelled with nothing to show for it (toggled off mid-flight): let it be tried again.
 		return () => {
 			cancelled = true;
